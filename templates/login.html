@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock title %}
+{% block body %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login with Registration</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',sans-serif;}
+  body{
+    background:linear-gradient(135deg,#b6d0ff,#e3f0ff 60%,#fafdff 100%);
+  }
+
+  /* Wrapper to center content below navbar */
+  .page-wrapper{
+    min-height:calc(100vh - 70px); /* adjust 70px if navbar height is different */
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding-top:20px; /* small gap below navbar */
+  }
+
+  .login-container{
+    width:90%;max-width:420px;background:rgba(255,255,255,0.75);
+    padding:35px 30px;border-radius:20px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.15);
+    animation:slideIn 1s ease;
+    position:relative;
+  }
+  @keyframes slideIn{from{opacity:0;transform:translateY(50px);}to{opacity:1;transform:translateY(0);}}
+  h2{
+    text-align:center;font-size:2rem;margin-bottom:20px;
+    background:linear-gradient(90deg,#2196f3,#174ea6,#b6d0ff);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  }
+
+  .login-types{display:flex;justify-content:space-between;margin-bottom:25px;gap:8px;}
+  .login-types button{
+    flex:1;background:linear-gradient(90deg,#2196f3,#174ea6);color:#fff;
+    border:none;padding:10px;border-radius:12px;cursor:pointer;
+    transition:transform 0.3s,box-shadow 0.3s;
+  }
+  .login-types button:hover,
+  .login-types button.active{
+    transform:translateY(-3px);
+    box-shadow:0 6px 15px rgba(33,150,243,0.4);
+  }
+
+  .form-group{margin-bottom:18px;}
+  .form-group input{
+    width:100%;padding:14px 12px;border:none;border-radius:12px;
+    background:rgba(255,255,255,0.9);
+    box-shadow:0 2px 6px rgba(33,150,243,0.1);
+    font-size:1rem;transition:box-shadow 0.3s,transform 0.3s;
+  }
+  .form-group input:focus{
+    box-shadow:0 4px 14px rgba(33,150,243,0.3);
+    transform:scale(1.02);outline:none;
+  }
+
+  .login-btn{
+    width:100%;padding:14px;border:none;border-radius:12px;
+    background:linear-gradient(90deg,#2196f3,#174ea6);color:#fff;
+    font-size:1.1rem;cursor:pointer;margin-top:5px;
+    transition:transform 0.3s, box-shadow 0.3s;
+  }
+  .login-btn:hover{
+    transform:translateY(-3px);
+    box-shadow:0 6px 18px rgba(33,150,243,0.35);
+  }
+
+  .links{margin-top:18px;display:flex;justify-content:space-between;font-size:0.9rem;}
+  .links a{color:#174ea6;text-decoration:none;position:relative;}
+  .links a::after{
+    content:'';position:absolute;left:0;bottom:-2px;width:0;height:2px;
+    background:#2196f3;transition:width 0.3s;
+  }
+  .links a:hover::after{width:100%;}
+
+  .popup{
+    position:fixed;top:50%;left:50%;
+    transform:translate(-50%,-50%) scale(0.8);
+    background:white;padding:20px 30px;border-radius:16px;
+    box-shadow:0 8px 30px rgba(33,150,243,0.3);
+    font-size:1.1rem;color:#174ea6;text-align:center;
+    opacity:0;pointer-events:none;
+    transition:opacity 0.4s ease,transform 0.4s ease;
+    z-index:1000;
+  }
+  .popup.show{
+    opacity:1;pointer-events:auto;
+    transform:translate(-50%,-50%) scale(1);
+  }
+
+  /* Overlay */
+  .overlay{
+    position:fixed;top:0;left:0;right:0;bottom:0;
+    background:rgba(0,0,0,0.4);
+    display:none;justify-content:center;align-items:center;z-index:999;
+  }
+  .overlay.active{display:flex;}
+
+  .overlay-box{
+    position:relative;
+    background:white;padding:25px 30px;border-radius:20px;
+    width:90%;max-width:400px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.3);
+    animation:fadePop 0.4s ease;
+  }
+  @keyframes fadePop{from{transform:scale(0.8);opacity:0;}to{transform:scale(1);opacity:1;}}
+  .overlay-box h3{text-align:center;margin-bottom:15px;color:#174ea6;}
+  .overlay-box input{
+    width:100%;margin-bottom:15px;padding:12px;
+    border:none;border-radius:12px;
+    background:rgba(240,240,240,0.9);font-size:1rem;
+  }
+  .overlay-box button{
+    width:100%;padding:12px;border:none;border-radius:12px;
+    background:linear-gradient(90deg,#2196f3,#174ea6);color:white;
+    font-size:1rem;cursor:pointer;
+  }
+  .close-btn{
+    position:absolute;top:10px;right:20px;font-size:1.3rem;
+    cursor:pointer;color:#174ea6;font-weight:bold;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-wrapper">
+  <div class="login-container">
+    <h2>Login</h2>
+
+    <div class="login-types">
+      <button class="type-btn active" data-type="Patient">Patient</button>
+      <button class="type-btn" data-type="Doctor">Doctor</button>
+      <button class="type-btn" data-type="Admin">Admin</button>
+    </div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <input type="text" id="username" placeholder="Username" required>
+      </div>
+      <div class="form-group">
+        <input type="password" id="password" placeholder="Password" required>
+      </div>
+      <button type="submit" class="login-btn">Login</button>
+
+      <div class="links">
+        <a href="#" id="createAccount">New User?</a>
+        <a href="#" id="forgotPassword">Forgot Password?</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="popup" id="popupMessage">✅ Login Successful!</div>
+
+<!-- Overlay -->
+<div class="overlay" id="overlay">
+  <div class="overlay-box">
+    <span class="close-btn" id="closeOverlay">&times;</span>
+    <div id="overlayContent"></div>
+  </div>
+</div>
+
+<script>
+const typeBtns=document.querySelectorAll('.type-btn');
+let loginType='Patient';
+typeBtns.forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    typeBtns.forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    loginType=btn.dataset.type;
+  });
+});
+
+const loginForm=document.getElementById('loginForm');
+const popup=document.getElementById('popupMessage');
+loginForm.addEventListener('submit',e=>{
+  e.preventDefault();
+  popup.textContent=`✅ ${loginType} Login Successful!`;
+  popup.classList.add('show');
+  setTimeout(()=>popup.classList.remove('show'),3000);
+  loginForm.reset();
+});
+
+const overlay=document.getElementById('overlay');
+const overlayContent=document.getElementById('overlayContent');
+document.getElementById('closeOverlay').onclick=()=>overlay.classList.remove('active');
+
+function showOverlay(inner){
+  overlayContent.innerHTML=inner;
+  overlay.classList.add('active');
+}
+
+document.getElementById('createAccount').onclick=e=>{
+  e.preventDefault();
+  showOverlay(`
+    <h3>Create Account</h3>
+    <form id="registerForm">
+      <input type="text" placeholder="Full Name" required>
+      <input type="email" placeholder="Email" required>
+      <input type="password" placeholder="Password" required>
+      <button type="submit">Create Account</button>
+    </form>
+  `);
+  document.getElementById('registerForm').onsubmit=function(ev){
+    ev.preventDefault();
+    overlay.classList.remove('active');
+    popup.textContent="✅ User Registered Successfully!";
+    popup.classList.add('show');
+    setTimeout(()=>popup.classList.remove('show'),3000);
+    this.reset();
+  };
+};
+
+document.getElementById('forgotPassword').onclick=e=>{
+  e.preventDefault();
+  showOverlay(`
+    <h3>Reset Password</h3>
+    <form id="forgotForm">
+      <input type="email" placeholder="Enter Your Email" required>
+      <button type="submit">Send Reset Link</button>
+    </form>
+  `);
+  document.getElementById('forgotForm').onsubmit=function(ev){
+    ev.preventDefault();
+    overlay.classList.remove('active');
+    popup.textContent="📧 Reset link sent!";
+    popup.classList.add('show');
+    setTimeout(()=>popup.classList.remove('show'),3000);
+    this.reset();
+  };
+};
+</script>
+</body>
+</html>
+
+{% endblock body %}
