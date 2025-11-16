@@ -1,20 +1,18 @@
 from django.shortcuts import render
 from django.conf import settings
-import requests
 import json
 from ollama import Client
-
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse   # <-- IMPORTANT FIX
+from django.http import JsonResponse
 from mydoc.db import users_col, doctors_col, appointments_col
 from django.contrib.auth.hashers import make_password, check_password
 from bson.objectid import ObjectId
-from datetime import datetime
+from datetime import datetime, date
 
 
-# ----------------------
-# UI ROUTES (Untouched)
-# ----------------------
+# ---------------------------------------------------
+# BASIC UI ROUTES
+# ---------------------------------------------------
 
 def home(request):
     return render(request, 'index.html')
@@ -30,32 +28,6 @@ def contact_us(request):
 
 def login(request):
     return render(request, 'login.html')
-
-
-def json_req(request):
-    try:
-        return json.loads(request.body.decode())
-    except:
-        return {}
-
-
-def doctors(request):
-    doctors = [
-        {"name": "Dr. Hiroshi Tanaka", "qualification": "MD, PhD in Psychiatry", "experience": 35, "badge": "Senior Expert", "designation": "Senior Consultant Psychiatrist & Professor", "image": "doctors/hiroshi.jpg"},
-        {"name": "Dr. Martin Reynolds", "qualification": "MD, Family Medicine", "experience": 25, "badge": "Experienced", "designation": "Senior Family Physician", "image": "doctors/martin.jpg"},
-        {"name": "Dr. Marcus Ellison", "qualification": "MD, FACC", "experience": 18, "badge": "Specialist", "designation": "Senior Cardiologist", "image": "doctors/marcus.jpg"},
-        {"name": "Dr. Rajesh Kumar", "qualification": "MBBS, MD (Internal Medicine)", "experience": 15, "badge": "Consultant", "designation": "Senior Consultant Physician", "image": "doctors/rajesh.jpg"},
-        {"name": "Dr. Andrew Collins", "qualification": "MD, General Surgery", "experience": 15, "badge": "Consultant", "designation": "Senior Consultant Surgeon", "image": "doctors/andrew.jpg"},
-        {"name": "Dr. Isabella Martinez", "qualification": "MD, Neurology Specialist", "experience": 12, "badge": "Specialist", "designation": "Senior Neurologist, City Medical Center", "image": "doctors/isabella.jpg"},
-        {"name": "Dr. Karim Al-Mansouri", "qualification": "MD, Oncology", "experience": 12, "badge": "Specialist", "designation": "Senior Oncologist", "image": "doctors/karima.jpg"},
-        {"name": "Dr. Anita Sharma", "qualification": "MBBS, MS (General Surgery)", "experience": 10, "badge": "Consultant", "designation": "Consultant Surgeon", "image": "doctors/anita.jpg"},
-        {"name": "Dr. Aaliyah Thompson", "qualification": "MD, Emergency Medicine", "experience": 8, "badge": "Specialist", "designation": "Senior Emergency Physician", "image": "doctors/aaliyah.jpg"},
-        {"name": "Dr. Anjali Mehta", "qualification": "MD (Dermatology), Fellowship in Cosmetic Dermatology", "experience": 8, "badge": "Specialist", "designation": "Consultant Dermatologist & Skin Care Specialist", "image": "doctors/anjali.jpg"},
-        {"name": "Dr. Arjun Mehta", "qualification": "MBBS, MS (Orthopedics)", "experience": 6, "badge": "Junior Consultant", "designation": "Junior Consultant Orthopedic Surgeon", "image": "doctors/arjun.jpg"},
-        {"name": "Dr. Priya Nair", "qualification": "MD, Obstetrics & Gynecology", "experience": 14, "badge": "Specialist", "designation": "Senior Gynecologist", "image": "doctors/isabella.jpg"}
-    ]
-    return render(request, "doctors.html", {"doctors": doctors})
-
 
 def chatbot(request):
     response_text = None
@@ -87,91 +59,194 @@ def chatbot(request):
     return render(request, "chatbot.html", {"response": response_text})
 
 
+def json_req(request):
+    try:
+        return json.loads(request.body.decode())
+    except:
+        return {}
 
-# -------------------------------
-#        API ROUTES
-# -------------------------------
+
+# ---------------------------------------------------
+# DOCTOR LIST PAGE
+# ---------------------------------------------------
+
+def doctors(request):
+    docs = list(doctors_col.find({}, {"password": 0}))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return render(request, "doctors.html", {"doctors": docs})
+
+
+# ---------------------------------------------------
+# USER LOGIN / REGISTER API
+# ---------------------------------------------------
 
 @csrf_exempt
 def user_login_register_api(request):
     data = json_req(request)
-    username = data.get("username")
-    password = data.get("password")
+
+    username_raw = data.get("username", "")
+    password = data.get("password", "")
+    register = data.get("register", False)
+
+    username = username_raw.strip().lower()
 
     if not username or not password:
         return JsonResponse({"error": "username & password required"}, status=400)
 
     user = users_col.find_one({"username": username})
 
-    if user:  # LOGIN
+    # LOGIN
+    if not register:
+        if not user:
+            return JsonResponse({"error": "user not found"}, status=404)
+
         if check_password(password, user["password"]):
-            return JsonResponse({"msg": "login success", "role": user["role"]})
+            return JsonResponse({
+                "msg": "login success",
+                "role": user.get("role", "user"),
+                "username": username
+            })
+
         return JsonResponse({"error": "wrong password"}, status=400)
 
     # REGISTER
+    if user:
+        return JsonResponse({"error": "user already exists"}, status=400)
+
     users_col.insert_one({
         "username": username,
         "password": make_password(password),
         "role": "user"
     })
-    return JsonResponse({"msg": "registered", "role": "user"})
 
+    return JsonResponse({
+        "msg": "registered",
+        "role": "user",
+        "username": username
+    })
+
+
+# ---------------------------------------------------
+# ADMIN LOGIN
+# ---------------------------------------------------
 
 @csrf_exempt
 def admin_login_api(request):
     data = json_req(request)
-    if data.get("username") == settings.ADMIN_USERNAME and data.get("password") == settings.ADMIN_PASSWORD:
+
+    admin_username = getattr(settings, "ADMIN_USERNAME", "admin")
+    admin_password = getattr(settings, "ADMIN_PASSWORD", "admin123")
+
+    if data.get("username") == admin_username and data.get("password") == admin_password:
         return JsonResponse({"msg": "admin login success"})
+
     return JsonResponse({"error": "invalid admin"}, status=400)
 
+
+# ---------------------------------------------------
+# ADMIN ADD DOCTOR
+# ---------------------------------------------------
 
 @csrf_exempt
 def admin_add_doctor_api(request):
     data = json_req(request)
 
-    if data.get("admin_user") != settings.ADMIN_USERNAME or data.get("admin_pass") != settings.ADMIN_PASSWORD:
+    admin_username = getattr(settings, "ADMIN_USERNAME", "admin")
+    admin_password = getattr(settings, "ADMIN_PASSWORD", "admin123")
+
+    if data.get("admin_user") != admin_username or data.get("admin_pass") != admin_password:
         return JsonResponse({"error": "unauthorized"}, status=403)
 
-    username = data.get("username")
-    password = data.get("password")
+    username = data.get("username", "").strip().lower()
+    password = data.get("password", "").strip()
+    name = data.get("name", username)
+    specialization = data.get("specialization", "")
 
     if not username or not password:
         return JsonResponse({"error": "missing doctor info"}, status=400)
 
     doctors_col.insert_one({
         "username": username,
-        "password": make_password(password),
-        "specialization": data.get("specialization", ""),
+        "name": name,
+        "password": username,   # default password
+        "specialization": specialization,
+        "designation": specialization,
         "work_days": "Mon-Sat"
     })
 
     return JsonResponse({"msg": "doctor added"})
 
 
+# ---------------------------------------------------
+# DOCTOR LOGIN
+# ---------------------------------------------------
+
 @csrf_exempt
 def doctor_login_api(request):
     data = json_req(request)
-    doc = doctors_col.find_one({"username": data.get("username")})
 
-    if not doc:
+    username = data.get("username", "").strip().lower()
+    password = data.get("password", "").strip().lower()
+
+    if not username or not password:
+        return JsonResponse({"error": "missing fields"}, status=400)
+
+    doctor = doctors_col.find_one({"username": username})
+
+    if not doctor:
         return JsonResponse({"error": "doctor not found"}, status=404)
 
-    if check_password(data.get("password"), doc["password"]):
-        return JsonResponse({"msg": "doctor login success", "role": "doctor"})
-    return JsonResponse({"error": "wrong password"}, status=400)
+    if password != doctor["password"]:
+        return JsonResponse({"error": "wrong password"}, status=400)
 
+    return JsonResponse({
+        "msg": "doctor login success",
+        "role": "doctor",
+        "doctor": username
+    })
+
+
+# ---------------------------------------------------
+# BOOK APPOINTMENT
+# ---------------------------------------------------
 
 @csrf_exempt
 def book_appointment_api(request):
     data = json_req(request)
 
-    if not data.get("doctor") or not data.get("username") or not data.get("day"):
+    doctor_id = (data.get("doctor_id") or "").strip().lower()
+    username = (data.get("username") or "").strip().lower()
+    day = data.get("day", "")
+
+    if not doctor_id or not username or not day:
         return JsonResponse({"error": "missing fields"}, status=400)
 
+    if day < str(date.today()):
+        return JsonResponse({"error": "Cannot select a past date"}, status=400)
+
+    user = users_col.find_one({"username": username})
+    if not user:
+        return JsonResponse({"error": "user not found"}, status=404)
+
+    # Fetch doctor by username
+    doctor = doctors_col.find_one({"username": doctor_id})
+    if not doctor:
+        return JsonResponse({"error": "doctor not found"}, status=404)
+
+    # Always store the doctor username
+    doctor_username = doctor["username"]
+
+    # Check slot
+    exists = appointments_col.find_one({"doctor": doctor_username, "day": day})
+    if exists:
+        return JsonResponse({"error": "slot taken"}, status=409)
+
+    # Create appointment
     appointments_col.insert_one({
-        "doctor": data["doctor"],
-        "user": data["username"],
-        "day": data["day"],
+        "doctor": doctor_username,
+        "user": username,
+        "day": day,
         "status": "Pending",
         "created_at": datetime.utcnow()
     })
@@ -179,12 +254,24 @@ def book_appointment_api(request):
     return JsonResponse({"msg": "appointment created", "status": "Pending"})
 
 
+
+# ---------------------------------------------------
+# DOCTOR APPOINTMENTS API
+# ---------------------------------------------------
+
 def doctor_appointments_api(request, doctor_name):
+    doctor_name = doctor_name.strip().lower()
+
     appts = list(appointments_col.find({"doctor": doctor_name}))
     for a in appts:
         a["_id"] = str(a["_id"])
+
     return JsonResponse({"appointments": appts})
 
+
+# ---------------------------------------------------
+# UPDATE APPOINTMENT STATUS
+# ---------------------------------------------------
 
 @csrf_exempt
 def update_appointment_api(request):
@@ -202,3 +289,101 @@ def update_appointment_api(request):
     )
 
     return JsonResponse({"msg": f"Appointment {new_status}"})
+
+
+# ---------------------------------------------------
+# USER DASHBOARD (FIXED FOR DOCTOR DESIGNATION)
+# ---------------------------------------------------
+
+def user_dashboard(request):
+    username = request.GET.get("user", "").strip().lower()
+
+    # GET ALL DOCTORS
+    doctors_list = list(doctors_col.find({}, {"password": 0}))
+    for d in doctors_list:
+        d["_id"] = str(d["_id"])
+
+        # if designation missing, fallback to specialization
+        if "designation" not in d:
+            d["designation"] = d.get("specialization", "")
+
+    # MAP → username → doctor details
+    doctor_map = {d["username"]: d for d in doctors_list}
+
+    # GET APPOINTMENTS FOR THIS USER
+    appts = []
+    if username:
+        appts = list(appointments_col.find({"user": username}))
+        for a in appts:
+            a["_id"] = str(a["_id"])
+
+            # Attach doctor details directly
+            doctor_username = a.get("doctor")
+
+            # Some old records may store full doctor name → fix automatically:
+            if doctor_username not in doctor_map:
+                for d in doctors_list:
+                    if d["name"].lower() == doctor_username.lower():
+                        doctor_username = d["username"]
+                        break
+
+            # Update appointment doctor field if repaired
+            a["doctor"] = doctor_username
+
+            # Attach full doctor details for template
+            a["doc"] = doctor_map.get(doctor_username)
+
+    today = date.today().isoformat()
+
+    return render(request, "user_dashboard.html", {
+        "doctors": doctors_list,
+        "appointments": appts,
+        "today": today,
+    })
+
+
+
+# ---------------------------------------------------
+# DOCTOR DASHBOARD
+# ---------------------------------------------------
+
+def doctor_dashboard(request):
+    return render(request, "doctor_dashboard.html")
+
+
+# ---------------------------------------------------
+# ADMIN DASHBOARD
+# ---------------------------------------------------
+
+def admin_dashboard(request):
+    doctors = list(doctors_col.find({}, {"password": 0}))
+    users = list(users_col.find({}, {"password": 0}))
+
+    doctor_stats = []
+    for d in doctors:
+        username = d["username"]
+        count = appointments_col.count_documents({"doctor": username})
+        doctor_stats.append({
+            "name": d.get("name"),
+            "username": username,
+            "designation": d.get("designation"),
+            "appointments": count
+        })
+
+    return render(request, "admin_dashboard.html", {
+        "doctor_stats": doctor_stats,
+        "users": users
+    })
+
+
+# ---------------------------------------------------
+# GET ALL DOCTORS
+# ---------------------------------------------------
+
+def get_all_doctors(request):
+    docs = list(doctors_col.find({}))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+        d.pop("password", None)
+
+    return JsonResponse({"doctors": docs})
